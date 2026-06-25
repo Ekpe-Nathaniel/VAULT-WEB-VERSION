@@ -1,58 +1,47 @@
 import type { EmbedFile } from '@/types'
 
-function simulateDelay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+const API_BASE = 'http://localhost:8000'
+
+async function apiFetch(path: string, options: RequestInit): Promise<Response> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, options)
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `Request failed (HTTP ${res.status})`)
+    }
+    return res
+  } catch (err) {
+    if (err instanceof TypeError && err.message === 'Failed to fetch') {
+      throw new Error(
+        `Cannot connect to backend at ${API_BASE}. Make sure the server is running.`,
+      )
+    }
+    throw err
+  }
 }
 
 export const embedService = {
-  async encryptMessage(message: string, password: string): Promise<string> {
-    await simulateDelay(600)
-    const encoder = new TextEncoder()
-    const data = encoder.encode(message + ':' + password)
-    const hash = await crypto.subtle.digest('SHA-256', data)
-    const hashArray = Array.from(new Uint8Array(hash))
-    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
-    return `${hashHex}:${btoa(message)}`
-  },
+  async embedPayload(
+    file: EmbedFile,
+    secretMessage: string,
+    fileType: string,
+    password: string,
+    token: string,
+  ): Promise<Blob> {
+    const formData = new FormData()
+    const response = await fetch(file.dataUrl)
+    const blob = await response.blob()
+    formData.append('cover_file', blob, file.name)
+    formData.append('secret_message', secretMessage)
+    formData.append('file_type', fileType)
+    formData.append('password', password)
 
-  async embedPayload(file: EmbedFile, encryptedPayload: string): Promise<string> {
-    await simulateDelay(900)
-    const canvas = document.createElement('canvas')
-    const img = new Image()
-    img.src = file.dataUrl
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve()
-      img.onerror = () => reject(new Error('Failed to load image'))
+    const res = await apiFetch('/api/stego/embed', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
     })
 
-    canvas.width = img.naturalWidth
-    canvas.height = img.naturalHeight
-    const ctx = canvas.getContext('2d')!
-    ctx.drawImage(img, 0, 0)
-
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    const data = imageData.data
-
-    const payloadBytes = new TextEncoder().encode(encryptedPayload)
-    const totalBits = payloadBytes.length * 8 + 32
-
-    if (totalBits > data.length) {
-      throw new Error('Payload too large for this image')
-    }
-
-    const sizeBits = payloadBytes.length.toString(2).padStart(32, '0')
-    const allBits = sizeBits + [...payloadBytes].map((b) => b.toString(2).padStart(8, '0')).join('')
-
-    for (let i = 0; i < allBits.length && i < data.length; i++) {
-      data[i] = (data[i] & 0xfe) | parseInt(allBits[i], 10)
-    }
-
-    ctx.putImageData(imageData, 0, 0)
-    return canvas.toDataURL('image/png')
-  },
-
-  async generateProtectedFile(dataUrl: string): Promise<string> {
-    await simulateDelay(400)
-    return dataUrl
+    return res.blob()
   },
 }

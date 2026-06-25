@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, Shield } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -25,6 +26,13 @@ const itemVariants = {
 }
 
 export function HeroSection() {
+  const navigate = useNavigate()
+
+  const scrollToFeatures = () => {
+    const el = document.getElementById('features')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
     <section className="relative overflow-hidden">
       <FloatingParticles />
@@ -69,11 +77,11 @@ export function HeroSection() {
             variants={itemVariants}
             className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4"
           >
-            <Button size="lg" className="w-full sm:w-auto">
+            <Button size="lg" className="w-full sm:w-auto" onClick={() => navigate('/login')}>
               Get Started
               <ArrowRight className="h-4 w-4" />
             </Button>
-            <Button variant="secondary" size="lg" className="w-full sm:w-auto">
+            <Button variant="secondary" size="lg" className="w-full sm:w-auto" onClick={scrollToFeatures}>
               Learn More
             </Button>
           </motion.div>

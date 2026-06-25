@@ -42,7 +42,7 @@ export function SuccessCard({ onDownload, onReset, canDownload }: SuccessCardPro
           transition={{ delay: 0.45, duration: 0.5 }}
           className="text-sm text-on-surface-variant mb-8 max-w-sm mx-auto leading-relaxed"
         >
-          Your file has been meticulously encoded. You can now download and share it safely.
+          Your file has been encoded. Download it below. Use the same password to extract the message later.
         </motion.p>
 
         <motion.div

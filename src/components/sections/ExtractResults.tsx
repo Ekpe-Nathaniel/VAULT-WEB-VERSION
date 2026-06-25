@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { FileText, ShieldCheck, Clock, Lock, Terminal, FileCode } from 'lucide-react'
+import { FileText, ShieldCheck, Clock, Lock, Terminal, FileCode, AlertTriangle } from 'lucide-react'
 import type { ExtractResult } from '@/types'
 
 function formatTimestamp(ts: number): string {
@@ -16,9 +16,29 @@ function formatTimestamp(ts: number): string {
 
 interface ExtractResultsProps {
   result: ExtractResult | null
+  errorMessage?: string
 }
 
-export function ExtractResults({ result }: ExtractResultsProps) {
+export function ExtractResults({ result, errorMessage }: ExtractResultsProps) {
+  if (errorMessage) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full py-20 px-6 text-center">
+        <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-coral/10 dark:bg-coral/5 backdrop-blur-md shadow-ambient-xs">
+          <AlertTriangle className="h-6 w-6 text-coral" />
+        </div>
+        <h3 className="font-primary text-base font-semibold text-on-surface mb-3 tracking-tight">
+          Extraction Failed
+        </h3>
+        <p className="text-sm text-on-surface-variant max-w-xs leading-relaxed mb-4">
+          {errorMessage}
+        </p>
+        <p className="text-[11px] text-on-surface-variant/60 max-w-xs leading-relaxed">
+          Make sure you entered the same password used during embedding and selected the correct stego file.
+        </p>
+      </div>
+    )
+  }
+
   if (!result) {
     return (
       <div className="flex flex-col items-center justify-center h-full py-20 px-6 text-center">

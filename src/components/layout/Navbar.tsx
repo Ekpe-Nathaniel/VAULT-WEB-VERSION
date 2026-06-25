@@ -25,7 +25,7 @@ export function Navbar() {
       <header
         className={cn(
           'fixed top-0 left-0 right-0 z-50',
-          isAuthenticated ? 'liquid-glass dark:liquid-glass-dark' : 'bg-transparent',
+          'liquid-glass dark:liquid-glass-dark',
           'border-b border-outline-variant/15 dark:border-white/[0.04]',
           'transition-all duration-500'
         )}
@@ -92,6 +92,13 @@ export function Navbar() {
 
               {isAuthenticated && (
                 <>
+                  <Link
+                    to="/settings"
+                    className="hidden md:flex h-9 w-9 items-center justify-center rounded-full liquid-glass-subtle dark:liquid-glass-dark text-on-surface-variant hover:text-primary transition-all duration-300 hover:brightness-110 active:scale-[0.92] no-tap-highlight"
+                    aria-label="Profile"
+                  >
+                    <User className="h-4 w-4" />
+                  </Link>
                   <motion.button
                     initial={{ opacity: 0, x: 20 }}
                     animate={{ opacity: 1, x: 0 }}

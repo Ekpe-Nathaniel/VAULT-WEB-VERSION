@@ -6,7 +6,7 @@ import { ExtractResults } from '@/components/sections/ExtractResults'
 import { useExtractStore } from '@/store/extractStore'
 
 export function Extract() {
-  const { file, password, status, result, setFile, setPassword, startExtraction } =
+  const { file, password, status, errorMessage, result, setFile, setPassword, startExtraction } =
     useExtractStore()
 
   return (
@@ -75,7 +75,7 @@ export function Extract() {
           transition={{ duration: 0.6, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
           className="lg:col-span-2 rounded-[28px] liquid-glass-intense dark:liquid-glass-dark-intense shadow-ambient-md p-6 sm:p-8"
         >
-          <ExtractResults result={result} />
+          <ExtractResults result={result} errorMessage={errorMessage} />
         </motion.div>
       </div>
     </motion.div>

@@ -1,26 +1,46 @@
-import type { EmbedFile, ExtractResult } from '@/types'
+import type { EmbedFile } from '@/types'
 
-function simulateDelay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+const API_BASE = 'http://localhost:8000'
+
+async function apiFetch(path: string, options: RequestInit): Promise<Response> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, options)
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `Request failed (HTTP ${res.status})`)
+    }
+    return res
+  } catch (err) {
+    if (err instanceof TypeError && err.message === 'Failed to fetch') {
+      throw new Error(
+        `Cannot connect to backend at ${API_BASE}. Make sure the server is running.`,
+      )
+    }
+    throw err
+  }
 }
 
 export const extractService = {
-  async extractMessage(file: EmbedFile, password: string): Promise<ExtractResult> {
-    await simulateDelay(2500)
+  async extractMessage(
+    file: EmbedFile,
+    fileType: string,
+    password: string,
+    token: string,
+  ): Promise<string> {
+    const formData = new FormData()
+    const response = await fetch(file.dataUrl)
+    const blob = await response.blob()
+    formData.append('stego_file', blob, file.name)
+    formData.append('file_type', fileType)
+    formData.append('password', password)
 
-    const demoMessages: Record<string, string> = {
-      '/9j/': 'Access granted. The rendezvous point is the Grand Hotel at 19:00. Look for the person holding a crimson umbrella. Authentication code: DELTA-7.',
-      'iVBOR': 'Decryption complete. Archive #734 contains the financial records spanning Q1–Q4. Encryption key fragment: XK29-MN41-PQ88. Proceed with caution.',
-    }
+    const res = await apiFetch('/api/stego/extract', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
 
-    const prefix = file.dataUrl.slice(0, 10)
-    const message = demoMessages[prefix] || demoMessages['iVBOR'] || `Decrypted payload from "${file.name}":\n\nEsteemed curator,\n\nThe documents you requested have been secured within the vault. Use the master key provided during our initial exchange to access the deep archive.\n\nCoordinates: 48°51'29.6"N 2°17'40.1"E\nTemporal window: 72 hours from receipt.\n\n— The Archivist`
-
-    return {
-      message,
-      format: file.type || 'image/png',
-      integrity: 'Verified — SHA-256 Match',
-      timestamp: Date.now(),
-    }
+    const data = await res.json()
+    return data.secret_message
   },
 }

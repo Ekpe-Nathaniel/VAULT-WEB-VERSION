@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, type DragEvent, type ChangeEvent } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Upload, File, X, Lock, Shield, Image, Music } from 'lucide-react'
+import { Upload, File, X, Lock, Shield, Image, Music, Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import type { EmbedFile } from '@/types'
@@ -37,6 +37,7 @@ export function ExtractDropzone({
   onExtract,
 }: ExtractDropzoneProps) {
   const [isDragOver, setIsDragOver] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -184,29 +185,40 @@ export function ExtractDropzone({
         )}
       </AnimatePresence>
 
-      {/* Extraction Key */}
+      {/* Password (same one used during embedding) */}
       <div className="space-y-2">
         <label className="block text-sm font-medium text-on-surface-variant">
-          Extraction Key
+          Embedding Password
         </label>
+        <p className="text-xs text-on-surface-variant/60 -mt-1 mb-1">
+          Enter the same password you used when embedding the secret.
+        </p>
         <div className="relative">
           <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
             <Lock className="h-4 w-4 text-on-surface-variant/60" />
           </div>
           <input
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => onPasswordChange(e.target.value)}
-            placeholder="Enter your secure password"
+            placeholder="Enter your embedding password"
             className={[
-              'w-full rounded-full pl-11 pr-6 py-3.5 text-sm text-on-surface',
+              'w-full rounded-full pl-11 pr-12 py-3.5 text-sm text-on-surface',
               'placeholder:text-on-surface-variant/50',
               'glass-input dark:glass-input-dark',
               'focus:bg-white/80 dark:focus:bg-white/8 focus:border-white/70 dark:focus:border-white/15 focus:outline-none',
               'transition-all duration-200',
             ].join(' ')}
-            aria-label="Extraction key"
+            aria-label="Embedding password"
           />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-on-surface transition-colors"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
         </div>
       </div>
 
@@ -230,7 +242,7 @@ export function ExtractDropzone({
       <div className="flex items-center justify-center gap-2">
         <Shield className="h-3.5 w-3.5 text-on-surface-variant/40" />
         <span className="text-[10px] text-on-surface-variant/40 tracking-[0.12em] uppercase font-medium">
-          Your data never leaves your browser.
+          Password-protected with PBKDF2+AES encryption.
         </span>
       </div>
     </div>

@@ -5,7 +5,7 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { Home } from '@/pages/Home'
 import { Login } from '@/pages/Login'
 import { SignUp } from '@/pages/SignUp'
-import { Dashboard } from '@/pages/Dashboard'
+
 import { Embed } from '@/pages/Embed'
 import { Extract } from '@/pages/Extract'
 import { History } from '@/pages/History'
@@ -26,7 +26,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
-            <Route path="/dashboard" element={<Protect><Dashboard /></Protect>} />
+
             <Route path="/embed" element={<Protect><Embed /></Protect>} />
             <Route path="/extract" element={<Protect><Extract /></Protect>} />
             <Route path="/history" element={<Protect><History /></Protect>} />
