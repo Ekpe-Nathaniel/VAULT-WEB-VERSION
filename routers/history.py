@@ -24,6 +24,24 @@ def list_history(
     return HistoryListResponse(records=records)
 
 
+@router.delete("/")
+def clear_history(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    records = (
+        db.query(HistoryRecord)
+        .filter(HistoryRecord.user_id == current_user.id)
+        .all()
+    )
+    for record in records:
+        if os.path.exists(record.stego_filename):
+            os.unlink(record.stego_filename)
+        db.delete(record)
+    db.commit()
+    return {"detail": "History cleared"}
+
+
 @router.get("/{record_id}/download")
 def download_stego(
     record_id: int,

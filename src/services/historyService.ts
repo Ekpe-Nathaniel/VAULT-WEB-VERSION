@@ -30,4 +30,11 @@ export const historyService = {
   downloadUrl(recordId: number): string {
     return `${API_BASE}/api/history/${recordId}/download`
   },
+
+  async clear(token: string): Promise<void> {
+    await apiFetch('/api/history/', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }

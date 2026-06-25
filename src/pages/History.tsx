@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
-import { Clock, Download, Image, Music, FileQuestion, ExternalLink } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Clock, Download, Image, Music, FileQuestion, Trash2, AlertTriangle, X } from 'lucide-react'
 import { GlassCard } from '@/components/ui/GlassCard'
+import { Button } from '@/components/ui/Button'
 import { useAuthStore } from '@/store/authStore'
 import { historyService, type HistoryItem } from '@/services/historyService'
 
@@ -27,6 +28,8 @@ export function History() {
   const apiToken = useAuthStore((s) => s.apiToken)
   const ensureApiToken = useAuthStore((s) => s.ensureApiToken)
   const [downloading, setDownloading] = useState<number | null>(null)
+  const [showClearModal, setShowClearModal] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -68,6 +71,20 @@ export function History() {
     }
   }
 
+  const handleClear = async () => {
+    setClearing(true)
+    try {
+      const token = apiToken || await ensureApiToken()
+      await historyService.clear(token)
+      setRecords([])
+      setShowClearModal(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear history')
+    } finally {
+      setClearing(false)
+    }
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -93,6 +110,20 @@ export function History() {
           Previously embedded files — download them again anytime.
         </p>
       </motion.div>
+
+      {/* Clear button */}
+      {!loading && records.length > 0 && (
+        <div className="flex justify-end mb-6">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowClearModal(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Clear History
+          </Button>
+        </div>
+      )}
 
       {/* Content */}
       {loading && (
@@ -170,6 +201,69 @@ export function History() {
           })}
         </div>
       )}
+      {/* Clear confirmation modal */}
+      <AnimatePresence>
+        {showClearModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+              onClick={() => !clearing && setShowClearModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="relative w-full max-w-sm"
+            >
+              <GlassCard className="p-6" variant="intense">
+                <button
+                  onClick={() => setShowClearModal(false)}
+                  disabled={clearing}
+                  className="absolute right-4 top-4 text-on-surface-variant hover:text-on-surface transition-colors disabled:opacity-50"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+                <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-coral/10">
+                  <AlertTriangle className="h-6 w-6 text-coral" />
+                </div>
+                <h3 className="font-primary text-lg font-semibold text-on-surface mb-2">
+                  Clear all history?
+                </h3>
+                <p className="text-sm text-on-surface-variant mb-6">
+                  This will permanently delete your entire history and remove all stored files from the server. This action cannot be undone.
+                </p>
+                <div className="flex gap-3">
+                  <Button
+                    variant="secondary"
+                    className="flex-1"
+                    onClick={() => setShowClearModal(false)}
+                    disabled={clearing}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    className="flex-1 !bg-coral !text-white hover:!brightness-110"
+                    onClick={handleClear}
+                    loading={clearing}
+                  >
+                    Clear All
+                  </Button>
+                </div>
+              </GlassCard>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }
