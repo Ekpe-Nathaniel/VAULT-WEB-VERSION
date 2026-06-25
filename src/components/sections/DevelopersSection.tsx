@@ -3,17 +3,17 @@ import { cn } from '@/lib/utils'
 
 const developers = [
   {
-    name: 'Eyram Yao',
+    name: 'Ekpe Nathaniel',
     role: 'Full-Stack Developer',
     bio: 'Architects secure front-to-back systems with a passion for steganography and privacy-first design.',
   },
   {
-    name: 'Kafui Yao',
+    name: 'Mensah Bright',
     role: 'UI/UX Designer',
     bio: 'Crafts intuitive, beautiful interfaces that make security feel seamless and human-centered.',
   },
   {
-    name: 'Selorm Yao',
+    name: 'Fosu Godson',
     role: 'Security Engineer',
     bio: 'Specializes in encryption protocols and zero-knowledge architectures that keep your data sovereign.',
   },
@@ -25,7 +25,7 @@ const avatarColors = [
   'from-mint/20 to-mint/5',
 ]
 
-const initialLetters = ['EY', 'KY', 'SY']
+const initialLetters = ['EN', 'MB', 'FG']
 
 export function DevelopersSection() {
   return (
