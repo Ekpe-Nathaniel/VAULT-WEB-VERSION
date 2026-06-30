@@ -7,6 +7,7 @@ async function apiFetch(path: string, options: RequestInit): Promise<Response> {
     const res = await fetch(`${API_BASE}${path}`, options)
     if (!res.ok) {
       const text = await res.text().catch(() => '')
+      console.error('[extract]', res.status, text)
       throw new Error(text || `Request failed (HTTP ${res.status})`)
     }
     return res

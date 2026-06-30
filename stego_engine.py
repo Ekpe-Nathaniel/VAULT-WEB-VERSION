@@ -20,6 +20,7 @@ Key / centroids:
 
 import base64
 import hashlib
+import os
 import struct
 import cv2
 import numpy as np
@@ -53,32 +54,48 @@ def _decrypt_centroids_key(cipher: bytes, password: str) -> str:
     return plain.decode("utf-8")
 
 
-def _append_encrypted_key(filepath: str, centroids_key: str, password: str) -> None:
-    """Append ``[cipher][magic][len]`` to *filepath*."""
+def _append_encrypted_key(filepath: str, centroids_key: str, password: str, cluster_idx: int) -> None:
+    """Append ``[cluster_idx][cipher][magic][len]`` to *filepath*."""
     cipher = _encrypt_centroids_key(centroids_key, password)
     with open(filepath, "ab") as f:
+        f.write(struct.pack("B", cluster_idx))
         f.write(cipher)
         f.write(_MAGIC)
         f.write(struct.pack(">I", len(cipher)))
 
 
-def _read_encrypted_key(filepath: str, password: str) -> str:
-    """Read the encrypted trailer from *filepath* and decrypt with *password*."""
+_TRAILER_OVERHEAD = 1 + 8 + 4  # cluster_idx + MAGIC + length
+
+
+def _read_encrypted_key(filepath: str, password: str) -> tuple[str, int]:
+    """Read the encrypted trailer from *filepath* and decrypt with *password*.
+
+    Returns ``(centroids_key, cluster_idx)``.
+    ``cluster_idx`` will be -1 for files created with the old trailer format.
+    """
     with open(filepath, "rb") as f:
-        # Read magic + length from the tail
-        f.seek(-12, 2)
+        # Try new format first (cluster_idx byte before MAGIC)
+        f.seek(-_TRAILER_OVERHEAD, 2)
+        cluster_idx = struct.unpack("B", f.read(1))[0]
         magic = f.read(8)
-        if magic != _MAGIC:
-            raise ValueError(
-                "No Vault key trailer found. This file was not created by Vault embedding."
-            )
-        (cipher_len,) = struct.unpack(">I", f.read(4))
+        if magic == _MAGIC:
+            (cipher_len,) = struct.unpack(">I", f.read(4))
+            f.seek(-(_TRAILER_OVERHEAD + cipher_len), 2)
+            cipher = f.read(cipher_len)
+        else:
+            # Fall back to old format (no cluster_idx byte)
+            f.seek(-12, 2)
+            magic = f.read(8)
+            if magic != _MAGIC:
+                raise ValueError(
+                    "No Vault key trailer found. This file was not created by Vault embedding."
+                )
+            (cipher_len,) = struct.unpack(">I", f.read(4))
+            f.seek(-(12 + cipher_len), 2)
+            cipher = f.read(cipher_len)
+            cluster_idx = -1
 
-        # Read cipher that sits before the trailer
-        f.seek(-(12 + cipher_len), 2)
-        cipher = f.read(cipher_len)
-
-    return _decrypt_centroids_key(cipher, password)
+    return _decrypt_centroids_key(cipher, password), cluster_idx
 
 
 # ---------------------------------------------------------------------------
@@ -144,10 +161,10 @@ def embed_image(
     secret_message: str,
     output_path: str,
     n_clusters: int = 3,
-) -> str:
+) -> tuple[str, int]:
     """Embed *secret_message* into the image at *cover_path*.
 
-    Returns the centroids_key (to be encrypted with password by the caller).
+    Returns ``(centroids_key, complex_cluster)``.
     """
     img = cv2.imread(cover_path)
     if img is None:
@@ -164,6 +181,14 @@ def embed_image(
     complex_cluster = _find_complex_cluster_image(pixels, labels, n_clusters)
     mask = labels == complex_cluster
     complex_indices = np.where(mask)[0]
+
+    # Sort pixels by distance to centroid (closest first) so boundary pixels
+    # don't shift clusters and corrupt the critical length prefix
+    centroid = kmeans.cluster_centers_[complex_cluster]
+    px_distances = np.linalg.norm(
+        pixels[complex_indices].astype(np.float64) - centroid, axis=1
+    )
+    complex_indices = complex_indices[np.argsort(px_distances)]
 
     bitstream = _message_to_bits(secret_message)
     capacity = len(complex_indices) * 3
@@ -184,13 +209,19 @@ def embed_image(
             bit_idx += 1
 
     stego_bgr = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-    cv2.imwrite(output_path, stego_bgr)
-    return centroids_key
+
+    # Always save as PNG to avoid lossy compression (JPEG destroys LSB data)
+    png_output = os.path.splitext(output_path)[0] + '.png'
+    cv2.imwrite(png_output, stego_bgr)
+    if png_output != output_path:
+        os.replace(png_output, output_path)
+    return centroids_key, complex_cluster
 
 
 def extract_image(
     stego_path: str,
     centroids_key: str,
+    complex_cluster: int,
     n_clusters: int = 3,
 ) -> str:
     """Extract a previously hidden message using the decrypted centroids key."""
@@ -204,11 +235,20 @@ def extract_image(
 
     diffs = pixels[:, np.newaxis, :] - centroids[np.newaxis, :, :]
     labels = np.argmin(np.linalg.norm(diffs, axis=2), axis=1)
-    n = len(centroids)
 
-    complex_cluster = _find_complex_cluster_image(pixels, labels, n)
+    # If no cluster index was stored (old format), fall back to recomputing
+    if complex_cluster < 0:
+        complex_cluster = _find_complex_cluster_image(pixels, labels, len(centroids))
+
     mask = labels == complex_cluster
     complex_indices = np.where(mask)[0]
+
+    # Sort by distance to centroid to match embed order (stable pixels first)
+    centroid = centroids[complex_cluster]
+    px_distances = np.linalg.norm(
+        pixels[complex_indices].astype(np.float64) - centroid, axis=1
+    )
+    complex_indices = complex_indices[np.argsort(px_distances)]
 
     flat = img_rgb.reshape(-1, 3)
     bits: list[str] = []
@@ -247,10 +287,10 @@ def embed_audio(
     n_clusters: int = 3,
     frame_length: int = 2048,
     hop_length: int = 512,
-) -> str:
+) -> tuple[str, int]:
     """Embed *secret_message* into the audio file at *cover_path*.
 
-    Returns the centroids_key (to be encrypted with password by the caller).
+    Returns ``(centroids_key, complex_cluster)``.
     """
     y, sr = librosa.load(cover_path, sr=None, mono=True)
 
@@ -294,12 +334,13 @@ def embed_audio(
         y_int16[si] = (y_int16[si] & ~1) | bit
 
     sf.write(output_path, y_int16, sr, subtype="PCM_16")
-    return centroids_key
+    return centroids_key, complex_cluster
 
 
 def extract_audio(
     stego_path: str,
     centroids_key: str,
+    complex_cluster: int,
     frame_length: int = 2048,
     hop_length: int = 512,
 ) -> str:
@@ -321,7 +362,8 @@ def extract_audio(
     frame_labels = np.argmin(np.linalg.norm(diffs, axis=2), axis=1)
     n = len(centroids)
 
-    complex_cluster = _find_complex_cluster_audio(zcr, rms, frame_labels, n)
+    if complex_cluster < 0:
+        complex_cluster = _find_complex_cluster_audio(zcr, rms, frame_labels, n)
 
     sample_mask = np.zeros(len(y_int16), dtype=bool)
     n_frames = len(frame_labels)
@@ -352,22 +394,22 @@ def embed(
     Returns the output path.
     """
     if file_type == "image":
-        centroids_key = embed_image(cover_path, secret_message, output_path)
+        centroids_key, cluster_idx = embed_image(cover_path, secret_message, output_path)
     elif file_type == "audio":
-        centroids_key = embed_audio(cover_path, secret_message, output_path)
+        centroids_key, cluster_idx = embed_audio(cover_path, secret_message, output_path)
     else:
         raise ValueError(f"Unsupported file_type: {file_type!r}")
 
-    _append_encrypted_key(output_path, centroids_key, password)
+    _append_encrypted_key(output_path, centroids_key, password, cluster_idx)
     return output_path
 
 
 def extract(stego_path: str, file_type: str, password: str) -> str:
     """Read the encrypted trailer, decrypt with *password*, then extract."""
-    centroids_key = _read_encrypted_key(stego_path, password)
+    centroids_key, cluster_idx = _read_encrypted_key(stego_path, password)
 
     if file_type == "image":
-        return extract_image(stego_path, centroids_key)
+        return extract_image(stego_path, centroids_key, cluster_idx)
     elif file_type == "audio":
-        return extract_audio(stego_path, centroids_key)
+        return extract_audio(stego_path, centroids_key, cluster_idx)
     raise ValueError(f"Unsupported file_type: {file_type!r}")

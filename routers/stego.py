@@ -10,6 +10,14 @@ from models import User, HistoryRecord
 from auth import get_current_user
 from stego_engine import embed, extract
 
+
+def _normalize_image_name(filename: str) -> str:
+    """Force .png extension for image outputs to match actual PNG content."""
+    name, ext = os.path.splitext(filename)
+    if ext.lower() in (".jpg", ".jpeg", ".webp"):
+        return name + ".png"
+    return filename
+
 router = APIRouter(prefix="/api/stego", tags=["Steganography"])
 
 STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "stored_files")
@@ -41,7 +49,9 @@ async def embed_endpoint(
     tmp_in.write(await cover_file.read())
     tmp_in.close()
 
-    tmp_out = tmp_in.name.replace(suffix, f"_stego{suffix}")
+    # For images, always output as PNG (lossless) to preserve LSB data
+    out_suffix = ".png" if file_type == "image" else suffix
+    tmp_out = tmp_in.name.replace(suffix, f"_stego{out_suffix}")
 
     try:
         embed(tmp_in.name, secret_message, tmp_out, file_type, password)
@@ -55,7 +65,7 @@ async def embed_endpoint(
 
     # Persist to storage and record history
     ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
-    stored_name = f"{current_user.id}_{ts}_{cover_file.filename}"
+    stored_name = f"{current_user.id}_{ts}_{_normalize_image_name(cover_file.filename)}"
     stored_path = os.path.join(STORAGE_DIR, stored_name)
     shutil.copy2(tmp_out, stored_path)
 
@@ -76,7 +86,7 @@ async def embed_endpoint(
     return FileResponse(
         tmp_out,
         media_type="application/octet-stream",
-        filename=f"stego_{cover_file.filename}",
+        filename=f"stego_{_normalize_image_name(cover_file.filename)}",
     )
 
 
