@@ -20,6 +20,7 @@ Key / centroids:
 
 import base64
 import hashlib
+import hmac
 import os
 import struct
 import cv2
@@ -51,17 +52,36 @@ def _decrypt_centroids_key(cipher: bytes, password: str) -> str:
     salt = b"vault_stego"
     key = _derive_key(password, salt)
     plain = bytes(c ^ key[i % len(key)] for i, c in enumerate(cipher))
-    return plain.decode("utf-8")
+    try:
+        result = plain.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(
+            "Password mismatch: The password you entered is incorrect."
+        )
+    # Sanity check — the decrypted payload must be valid base64
+    try:
+        raw = base64.b64decode(result)
+        if len(raw) < 8:
+            raise ValueError
+    except Exception:
+        raise ValueError(
+            "Password mismatch: The password you entered is incorrect."
+        )
+    return result
 
 
 def _append_encrypted_key(filepath: str, centroids_key: str, password: str, cluster_idx: int) -> None:
-    """Append ``[cluster_idx][cipher][magic][len]`` to *filepath*."""
+    """Append ``[cluster_idx][version][cipher][hmac][magic][total_len]`` to *filepath*."""
     cipher = _encrypt_centroids_key(centroids_key, password)
+    tag = hmac.new(password.encode("utf-8"), cipher, hashlib.sha256).digest()
+    total_len = 1 + 1 + len(cipher) + 32 + 8 + 4  # 46 + N
     with open(filepath, "ab") as f:
-        f.write(struct.pack("B", cluster_idx))
-        f.write(cipher)
-        f.write(_MAGIC)
-        f.write(struct.pack(">I", len(cipher)))
+        f.write(struct.pack("B", cluster_idx))          # 1 byte
+        f.write(struct.pack("B", 2))                    # 1 byte, version=2
+        f.write(cipher)                                 # N bytes
+        f.write(tag)                                    # 32 bytes
+        f.write(b"VAULTK2!")                            # 8 bytes
+        f.write(struct.pack(">I", total_len))           # 4 bytes
 
 
 _TRAILER_OVERHEAD = 1 + 8 + 4  # cluster_idx + MAGIC + length
@@ -70,32 +90,98 @@ _TRAILER_OVERHEAD = 1 + 8 + 4  # cluster_idx + MAGIC + length
 def _read_encrypted_key(filepath: str, password: str) -> tuple[str, int]:
     """Read the encrypted trailer from *filepath* and decrypt with *password*.
 
+    Supports three trailer formats:
+      - **New** (version=2, with HMAC):
+        ``[cluster_idx(1)][version=2(1)][cipher(N)][hmac(32)][MAGIC(8)][total_len(4)]``
+      - **Current** (version=1, with cluster_idx):
+        ``[cluster_idx(1)][cipher(N)][MAGIC(8)][cipher_len(4)]``
+      - **Old** (no cluster_idx):
+        ``[cipher(N)][MAGIC(8)][cipher_len(4)]``
+
     Returns ``(centroids_key, cluster_idx)``.
-    ``cluster_idx`` will be -1 for files created with the old trailer format.
+    ``cluster_idx`` will be ``-1`` for files that lack a stored cluster index
+    (old format), which causes ``extract_image`` / ``extract_audio`` to
+    recompute the complex cluster from the decrypted centroids.
+
+    Raises ``ValueError`` on password mismatch or missing trailer.
     """
     with open(filepath, "rb") as f:
-        # Try new format first (cluster_idx byte before MAGIC)
-        f.seek(-_TRAILER_OVERHEAD, 2)
-        cluster_idx = struct.unpack("B", f.read(1))[0]
+        # ----------------------------------------------------------------
+        # 1) New format  (version 2, 8-byte MAGIC "VAULTK2!")
+        #    [cluster_idx(1)][version=2(1)][cipher(N)][hmac(32)][MAGIC(8)][total_len(4)]
+        # ----------------------------------------------------------------
+        f.seek(-12, 2)
         magic = f.read(8)
-        if magic == _MAGIC:
-            (cipher_len,) = struct.unpack(">I", f.read(4))
-            f.seek(-(_TRAILER_OVERHEAD + cipher_len), 2)
-            cipher = f.read(cipher_len)
-        else:
-            # Fall back to old format (no cluster_idx byte)
-            f.seek(-12, 2)
-            magic = f.read(8)
-            if magic != _MAGIC:
+
+        if magic == b"VAULTK2!":
+            (total_len,) = struct.unpack(">I", f.read(4))
+            f.seek(-total_len, 2)
+            data = f.read(total_len)
+            cluster_idx = data[0]
+            cipher_len = total_len - 46  # 46 = 1 + 1 + 32 + 8 + 4
+            cipher = data[2:2 + cipher_len]
+            stored_hmac = data[2 + cipher_len:2 + cipher_len + 32]
+
+            expected_hmac = hmac.new(
+                password.encode("utf-8"), cipher, hashlib.sha256
+            ).digest()
+            if not hmac.compare_digest(stored_hmac, expected_hmac):
                 raise ValueError(
-                    "No Vault key trailer found. This file was not created by Vault embedding."
+                    "Password mismatch: The password you entered is incorrect."
                 )
+            return _decrypt_centroids_key(cipher, password), cluster_idx
+
+        # ----------------------------------------------------------------
+        # 2) Buggy new format  (7-byte MAGIC "VAULTK2", total_len off by 1)
+        #    At offset -12 we read [last_hmac_byte(1)][VAULTK2(7)]
+        # ----------------------------------------------------------------
+        if magic[1:] == b"VAULTK2":
+            # Total_len was computed as 46+N but actual trailer is 45+N
+            (stored_total_len,) = struct.unpack(">I", f.read(4))
+            actual_total_len = stored_total_len - 1
+            cipher_len = stored_total_len - 46
+            f.seek(-actual_total_len, 2)
+            data = f.read(actual_total_len)
+            cluster_idx = data[0]
+            cipher = data[2:2 + cipher_len]
+            stored_hmac = data[2 + cipher_len:2 + cipher_len + 32]
+
+            expected_hmac = hmac.new(
+                password.encode("utf-8"), cipher, hashlib.sha256
+            ).digest()
+            if not hmac.compare_digest(stored_hmac, expected_hmac):
+                raise ValueError(
+                    "Password mismatch: The password you entered is incorrect."
+                )
+            return _decrypt_centroids_key(cipher, password), cluster_idx
+
+        # ----------------------------------------------------------------
+        # 3) Current (v1) / Old format — MAGIC=b"VAULTKEY"
+        # ----------------------------------------------------------------
+        if magic == _MAGIC:
             (cipher_len,) = struct.unpack(">I", f.read(4))
             f.seek(-(12 + cipher_len), 2)
             cipher = f.read(cipher_len)
             cluster_idx = -1
+            return _decrypt_centroids_key(cipher, password), cluster_idx
 
-    return _decrypt_centroids_key(cipher, password), cluster_idx
+        # ----------------------------------------------------------------
+        # 4) Safety net — try the original detection offset
+        # ----------------------------------------------------------------
+        f.seek(-_TRAILER_OVERHEAD, 2)
+        cluster_idx = struct.unpack("B", f.read(1))[0]
+        magic2 = f.read(8)
+        if magic2 == _MAGIC:
+            (cipher_len,) = struct.unpack(">I", f.read(4))
+            f.seek(-(12 + cipher_len), 2)
+            cipher = f.read(cipher_len)
+            cluster_idx = -1
+            return _decrypt_centroids_key(cipher, password), cluster_idx
+
+        raise ValueError(
+            "No Vault key trailer found. "
+            "This file was not created by Vault embedding."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -182,13 +268,14 @@ def embed_image(
     mask = labels == complex_cluster
     complex_indices = np.where(mask)[0]
 
-    # Sort pixels by distance to centroid (closest first) so boundary pixels
-    # don't shift clusters and corrupt the critical length prefix
+    # Pixels are already ordered by their 1D index (np.where returns indices
+    # in ascending C order), which is deterministic and unaffected by LSB
+    # changes, unlike distance-based sorting which can reorder pixels after
+    # modification.
     centroid = kmeans.cluster_centers_[complex_cluster]
     px_distances = np.linalg.norm(
         pixels[complex_indices].astype(np.float64) - centroid, axis=1
     )
-    complex_indices = complex_indices[np.argsort(px_distances)]
 
     bitstream = _message_to_bits(secret_message)
     capacity = len(complex_indices) * 3
@@ -242,13 +329,6 @@ def extract_image(
 
     mask = labels == complex_cluster
     complex_indices = np.where(mask)[0]
-
-    # Sort by distance to centroid to match embed order (stable pixels first)
-    centroid = centroids[complex_cluster]
-    px_distances = np.linalg.norm(
-        pixels[complex_indices].astype(np.float64) - centroid, axis=1
-    )
-    complex_indices = complex_indices[np.argsort(px_distances)]
 
     flat = img_rgb.reshape(-1, 3)
     bits: list[str] = []

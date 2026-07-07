@@ -3,9 +3,24 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Upload, File, X, Image, Music } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { EmbedFile } from '@/types'
+import { MediaTypeDropdown } from '@/components/ui/MediaTypeDropdown'
 
-const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'audio/wav', 'audio/flac']
-const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.wav', '.flac']
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp']
+
+const AUDIO_TYPES = [
+  'audio/wav',
+  'audio/mpeg',
+  'audio/flac',
+  'audio/ogg',
+  'audio/mp4',
+  'audio/aiff',
+  'audio/x-aiff',
+  'audio/opus',
+  'audio/x-ms-wma',
+]
+const AUDIO_EXTENSIONS = ['.wav', '.mp3', '.flac', '.ogg', '.oga', '.m4a', '.aiff', '.aif', '.opus', '.wma']
+
 const MAX_SIZE = 100 * 1024 * 1024
 
 const FILE_ICONS: Record<string, typeof Image> = {
@@ -27,14 +42,21 @@ function formatSize(bytes: number): string {
 export function UploadDropzone({ file, onFileSelect }: UploadDropzoneProps) {
   const [isDragOver, setIsDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [mediaType, setMediaType] = useState<'image' | 'audio' | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dropzoneRef = useRef<HTMLDivElement>(null)
+
+  const allowedExtensions = mediaType === 'audio' ? AUDIO_EXTENSIONS : IMAGE_EXTENSIONS
+  const allowedTypes = mediaType === 'audio' ? AUDIO_TYPES : IMAGE_TYPES
 
   const processFile = useCallback(
     (selectedFile: File) => {
       setError(null)
       const ext = '.' + selectedFile.name.split('.').pop()?.toLowerCase()
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        setError(`Unsupported file type. Supported: ${ALLOWED_EXTENSIONS.join(', ')}`)
+      const allExtensions = [...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS]
+      if (!allExtensions.includes(ext)) {
+        setError(`Unsupported file type. Supported: ${allExtensions.join(', ')}`)
         return
       }
       if (selectedFile.size > MAX_SIZE) {
@@ -77,6 +99,25 @@ export function UploadDropzone({ file, onFileSelect }: UploadDropzoneProps) {
     if (f) processFile(f)
   }
 
+  const handleMediaTypeSelect = (type: 'image' | 'audio') => {
+    setMediaType(type)
+    setShowDropdown(false)
+    setTimeout(() => inputRef.current?.click(), 100)
+  }
+
+  const handleClick = () => {
+    if (!file) {
+      setShowDropdown((prev) => !prev)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.key === 'Enter' || e.key === ' ') && !file) {
+      e.preventDefault()
+      setShowDropdown((prev) => !prev)
+    }
+  }
+
   const category = file?.type.startsWith('image') ? 'image' : 'audio'
   const FileIcon = FILE_ICONS[category] || File
 
@@ -114,16 +155,12 @@ export function UploadDropzone({ file, onFileSelect }: UploadDropzoneProps) {
   return (
     <div className="space-y-4">
       <div
+        ref={dropzoneRef}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && !file) {
-            e.preventDefault()
-            inputRef.current?.click()
-          }
-        }}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
         aria-label="Upload cover file"
@@ -139,7 +176,8 @@ export function UploadDropzone({ file, onFileSelect }: UploadDropzoneProps) {
         <input
           ref={inputRef}
           type="file"
-          accept={ALLOWED_TYPES.join(',')}
+          accept={allowedTypes.join(',')}
+          key={mediaType}
           onChange={handleInputChange}
           className="sr-only"
           aria-hidden="true"
@@ -156,6 +194,7 @@ export function UploadDropzone({ file, onFileSelect }: UploadDropzoneProps) {
         <p className="text-sm text-on-surface-variant leading-relaxed max-w-xs mx-auto">
           Drag and drop your image or audio here, or{' '}
           <span className="text-primary hover:underline cursor-pointer">browse</span> to select.
+          <span className="block mt-1">Click to select image or audio type.</span>
         </p>
 
         <AnimatePresence>
@@ -173,6 +212,13 @@ export function UploadDropzone({ file, onFileSelect }: UploadDropzoneProps) {
           )}
         </AnimatePresence>
       </div>
+
+      <MediaTypeDropdown
+        open={showDropdown}
+        onSelect={handleMediaTypeSelect}
+        onClose={() => setShowDropdown(false)}
+        anchorRef={dropzoneRef}
+      />
     </div>
   )
 }

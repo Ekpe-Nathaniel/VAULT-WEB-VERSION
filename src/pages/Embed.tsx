@@ -46,11 +46,13 @@ export function Embed() {
 
   const canSubmit = file && message.length > 0 && password.length >= 8 && status !== 'processing'
 
-  function handleDownload() {
+  const defaultFilename = `vault_${file?.name || 'protected.png'}`
+
+  function handleDownload(customFilename?: string) {
     if (downloadUrl) {
       const link = document.createElement('a')
       link.href = downloadUrl
-      link.download = `vault_${file?.name || 'protected.png'}`
+      link.download = customFilename || defaultFilename
       link.click()
     }
   }
@@ -121,7 +123,7 @@ export function Embed() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
               >
-                <SuccessCard onDownload={handleDownload} onReset={resetWorkflow} canDownload={!!downloadUrl} />
+                <SuccessCard onDownload={handleDownload} onReset={resetWorkflow} canDownload={!!downloadUrl} defaultFilename={defaultFilename} />
               </motion.div>
             ) : (
               <motion.div

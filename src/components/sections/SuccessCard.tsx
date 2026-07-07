@@ -1,15 +1,20 @@
+import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { CheckCircle, Download, RotateCcw } from 'lucide-react'
+import { CheckCircle, Download, RotateCcw, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { GlassCard } from '@/components/ui/GlassCard'
 
 interface SuccessCardProps {
-  onDownload: () => void
+  onDownload: (customFilename?: string) => void
   onReset: () => void
   canDownload: boolean
+  defaultFilename?: string
 }
 
-export function SuccessCard({ onDownload, onReset, canDownload }: SuccessCardProps) {
+export function SuccessCard({ onDownload, onReset, canDownload, defaultFilename = 'protected.png' }: SuccessCardProps) {
+  const [showRename, setShowRename] = useState(false)
+  const [filename, setFilename] = useState(defaultFilename)
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -40,10 +45,51 @@ export function SuccessCard({ onDownload, onReset, canDownload }: SuccessCardPro
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.45, duration: 0.5 }}
-          className="text-sm text-on-surface-variant mb-8 max-w-sm mx-auto leading-relaxed"
+          className="text-sm text-on-surface-variant mb-6 max-w-sm mx-auto leading-relaxed"
         >
           Your file has been encoded. Download it below. Use the same password to extract the message later.
         </motion.p>
+
+        {/* File rename section */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5, duration: 0.5 }}
+          className="mb-6"
+        >
+          {showRename ? (
+            <div className="flex items-center gap-2 max-w-sm mx-auto">
+              <input
+                type="text"
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+                className={[
+                  'flex-1 rounded-full px-4 py-2 text-sm text-on-surface',
+                  'placeholder:text-on-surface-variant/50',
+                  'glass-input dark:glass-input-dark',
+                  'focus:bg-white/80 dark:focus:bg-white/8 focus:border-white/70 dark:focus:border-white/15 focus:outline-none',
+                  'transition-all duration-200',
+                ].join(' ')}
+                placeholder="Enter filename..."
+                aria-label="Output filename"
+              />
+              <button
+                onClick={() => { setShowRename(false); setFilename(defaultFilename) }}
+                className="text-xs text-on-surface-variant/60 hover:text-on-surface transition-colors whitespace-nowrap"
+              >
+                Reset
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowRename(true)}
+              className="inline-flex items-center gap-1.5 text-xs text-on-surface-variant/60 hover:text-on-surface transition-colors cursor-pointer"
+            >
+              <Pencil className="h-3 w-3" />
+              Rename output file
+            </button>
+          )}
+        </motion.div>
 
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -51,7 +97,7 @@ export function SuccessCard({ onDownload, onReset, canDownload }: SuccessCardPro
           transition={{ delay: 0.55, duration: 0.5 }}
           className="flex flex-col sm:flex-row items-center justify-center gap-3"
         >
-          <Button size="lg" className="w-full sm:w-auto" onClick={onDownload} disabled={!canDownload}>
+          <Button size="lg" className="w-full sm:w-auto" onClick={() => onDownload(showRename ? filename : undefined)} disabled={!canDownload}>
             <Download className="h-4 w-4" />
             Download Protected File
           </Button>
